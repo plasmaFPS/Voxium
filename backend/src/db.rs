@@ -4,7 +4,7 @@ use std::path::Path;
 /// Create the SQLite connection pool and run migrations.
 pub async fn init_db() -> SqlitePool {
     dotenvy::dotenv().ok();
-    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:discord2.db".into());
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:voxium.db".into());
 
     // Create the DB file if it doesn't exist
     let db_path = database_url.trim_start_matches("sqlite:");

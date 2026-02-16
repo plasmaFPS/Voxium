@@ -1,6 +1,6 @@
 # README Déploiement VPS
 
-Guide de déploiement de Discord2 sur VPS avec:
+Guide de déploiement de Voxium sur VPS avec:
 - backend Rust en service systemd
 - reverse proxy Nginx
 - TLS pour HTTPS/WSS
@@ -10,7 +10,7 @@ Guide de déploiement de Discord2 sur VPS avec:
 
 ## 1) Architecture cible
 
-- Backend Discord2 écoute en local sur `127.0.0.1:8080`
+- Backend Voxium écoute en local sur `127.0.0.1:8080`
 - Nginx expose `https://chat.ton-domaine.com`
 - WebSocket passe via Nginx (`wss://chat.ton-domaine.com/ws`)
 - DB SQLite stockée sur le VPS
@@ -38,14 +38,14 @@ source $HOME/.cargo/env
 
 ```bash
 cd /opt
-sudo git clone https://github.com/Pouare514/discord2.git
-sudo chown -R $USER:$USER /opt/discord2
-cd /opt/discord2
+sudo git clone https://github.com/Pouare514/discord2.git voxium
+sudo chown -R $USER:$USER /opt/voxium
+cd /opt/voxium
 cargo build --release -p backend
 ```
 
 Binaire backend généré ici:
-- `/opt/discord2/target/release/backend`
+- `/opt/voxium/target/release/backend`
 
 ---
 
@@ -54,8 +54,8 @@ Binaire backend généré ici:
 Créer un fichier env dédié au service:
 
 ```bash
-sudo mkdir -p /etc/discord2
-sudo nano /etc/discord2/backend.env
+sudo mkdir -p /etc/voxium
+sudo nano /etc/voxium/backend.env
 ```
 
 Contenu recommandé:
@@ -63,13 +63,13 @@ Contenu recommandé:
 ```env
 PORT=8080
 JWT_SECRET=change-moi-avec-une-vraie-cle-longue
-DATABASE_URL=sqlite:/opt/discord2/discord2.db
+DATABASE_URL=sqlite:/opt/voxium/voxium.db
 ```
 
 Créer dossier uploads (si besoin):
 
 ```bash
-mkdir -p /opt/discord2/uploads
+mkdir -p /opt/voxium/uploads
 ```
 
 ---
@@ -79,22 +79,22 @@ mkdir -p /opt/discord2/uploads
 Créer le service:
 
 ```bash
-sudo nano /etc/systemd/system/discord2-backend.service
+sudo nano /etc/systemd/system/voxium-backend.service
 ```
 
 Contenu:
 
 ```ini
 [Unit]
-Description=Discord2 Backend
+Description=Voxium Backend
 After=network.target
 
 [Service]
 Type=simple
 User=www-data
-WorkingDirectory=/opt/discord2
-EnvironmentFile=/etc/discord2/backend.env
-ExecStart=/opt/discord2/target/release/backend
+WorkingDirectory=/opt/voxium
+EnvironmentFile=/etc/voxium/backend.env
+ExecStart=/opt/voxium/target/release/backend
 Restart=always
 RestartSec=3
 
@@ -102,7 +102,7 @@ RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ReadWritePaths=/opt/discord2
+ReadWritePaths=/opt/voxium
 
 [Install]
 WantedBy=multi-user.target
@@ -112,15 +112,15 @@ Activer et démarrer:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable discord2-backend
-sudo systemctl start discord2-backend
-sudo systemctl status discord2-backend
+sudo systemctl enable voxium-backend
+sudo systemctl start voxium-backend
+sudo systemctl status voxium-backend
 ```
 
 Logs live:
 
 ```bash
-sudo journalctl -u discord2-backend -f
+sudo journalctl -u voxium-backend -f
 ```
 
 ---
@@ -130,7 +130,7 @@ sudo journalctl -u discord2-backend -f
 Créer la conf Nginx:
 
 ```bash
-sudo nano /etc/nginx/sites-available/discord2
+sudo nano /etc/nginx/sites-available/voxium
 ```
 
 Contenu:
@@ -173,7 +173,7 @@ server {
 Activer:
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/discord2 /etc/nginx/sites-enabled/discord2
+sudo ln -s /etc/nginx/sites-available/voxium /etc/nginx/sites-enabled/voxium
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -213,7 +213,7 @@ sudo apt install -y cloudflared
 
 ```bash
 cloudflared tunnel loginV
-cloudflared tunnel create discord2
+cloudflared tunnel create voxium
 ```
 
 ### 8.3 Config tunnel
@@ -226,7 +226,7 @@ sudo nano /etc/cloudflared/config.yml
 Exemple:
 
 ```yaml
-tunnel: discord2
+tunnel: voxium
 credentials-file: /home/ubuntu/.cloudflared/<UUID_DU_TUNNEL>.json
 
 ingress:
@@ -238,7 +238,7 @@ ingress:
 ### 8.4 Route DNS + service
 
 ```bash
-cloudflared tunnel route dns discord2 chat.ton-domaine.com
+cloudflared tunnel route dns voxium chat.ton-domaine.com
 sudo cloudflared service install
 sudo systemctl enable cloudflared
 sudo systemctl start cloudflared
@@ -248,7 +248,7 @@ Avec Cloudflare, TLS est géré côté edge, et tu gardes `https/wss` côté cli
 
 ---
 
-## 9) Config client Discord2 (important)
+## 9) Config client Voxium (important)
 
 Le client actuel utilise des URLs codées en dur dans `discord-app/src/main.js`.
 
@@ -273,11 +273,11 @@ Aussi adapter la CSP dans `discord-app/src-tauri/tauri.conf.json` (`connect-src`
 ## 10) Mise à jour applicative
 
 ```bash
-cd /opt/discord2
+cd /opt/voxium
 git pull
 cargo build --release -p backend
-sudo systemctl restart discord2-backend
-sudo systemctl status discord2-backend
+sudo systemctl restart voxium-backend
+sudo systemctl status voxium-backend
 ```
 
 ---
@@ -294,7 +294,7 @@ WebSocket (test simple):
 - vérifier les logs backend en parallèle:
 
 ```bash
-sudo journalctl -u discord2-backend -f
+sudo journalctl -u voxium-backend -f
 ```
 
 ---
@@ -302,7 +302,7 @@ sudo journalctl -u discord2-backend -f
 ## 12) Bonnes pratiques sécurité (minimum)
 
 - Mets un vrai `JWT_SECRET` long et unique
-- Sauvegarde régulière de `discord2.db` + dossier `uploads/`
+- Sauvegarde régulière de `voxium.db` + dossier `uploads/`
 - N’exécute pas le backend en root
 - Limite les ports ouverts (`80/443` seulement si possible)
 - Active fail2ban/ufw selon ton infra
@@ -312,8 +312,8 @@ sudo journalctl -u discord2-backend -f
 ## 13) Backup simple
 
 ```bash
-mkdir -p /opt/discord2/backups
-cp /opt/discord2/discord2.db /opt/discord2/backups/discord2-$(date +%F-%H%M).db
+mkdir -p /opt/voxium/backups
+cp /opt/voxium/voxium.db /opt/voxium/backups/voxium-$(date +%F-%H%M).db
 ```
 
 Tu peux cronifier ce backup + sync externe (S3, rsync, etc.).

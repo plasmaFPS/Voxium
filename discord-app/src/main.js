@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════
-//  Discord2 — Frontend Application Logic (v3 — Full Clone)
+//  Voxium — Frontend Application Logic (v3 — Full Clone)
 // ═══════════════════════════════════════════════════════
 
 const API = "http://127.0.0.1:8080";
@@ -371,7 +371,7 @@ const globalMentionBadge = $("#global-mention-badge");
 // Members toggle
 const membersToggleBtn = $("#members-toggle-btn");
 let membersVisible = true;
-const BASE_APP_TITLE = "Discord2";
+const BASE_APP_TITLE = "Voxium";
 
 function getGlobalMentionCount() {
     return Object.entries(state.mentionByRoom || {}).reduce((sum, [roomId, count]) => {

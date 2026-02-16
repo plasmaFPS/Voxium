@@ -1,101 +1,114 @@
-# Discord2
+# Voxium
 
-Clone Discord-like (chat texte/voice + rôles + modération) construit avec:
-- Backend Rust (`actix-web` + `sqlx` + SQLite)
-- Frontend Tauri + HTML/CSS/JS
+A Discord-like clone (text/voice chat + roles + moderation) built with:
+- Rust backend (`actix-web` + `sqlx` + SQLite)
+- Tauri frontend + HTML/CSS/JS
 
 ---
 
-## Sommaire
-- [Fonctionnalités](#fonctionnalités)
+## Table of Contents
+- [Features](#features)
 - [Roadmap](#roadmap)
-- [Prérequis](#prérequis)
-- [Setup rapide (local)](#setup-rapide-local)
-- [Utiliser avec des amis (réseau)](#utiliser-avec-des-amis-réseau)
-- [Rôles & administration](#rôles--administration)
-- [Contribuer](#contribuer)
-- [Dépannage](#dépannage)
+- [Technical Docs](#technical-docs)
+- [Prerequisites](#prerequisites)
+- [Quick Local Setup](#quick-local-setup)
+- [Using It with Friends (Network)](#using-it-with-friends-network)
+- [Roles & Administration](#roles--administration)
+- [Contributing](#contributing)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
-## Fonctionnalités
-- Authentification (inscription/connexion)
-- Salons textuels et vocaux
-- Messages temps réel via WebSocket
-- Uploads d’images
-- Réponses (reply), épingles (pins), recherche avancée
-- Rôles serveur + permissions par salon
-- Paramètres serveur/salon côté interface
+## Features
+- Authentication (register/login)
+- Text and voice channels
+- Real-time messaging via WebSocket
+- Image uploads
+- Replies, pins, advanced search
+- Server roles + room-level permissions
+- Server/room settings in the UI
 
 ---
 
 ## Roadmap
 
-### Court terme
-- Stabilisation multi-utilisateurs sur réseau local/Internet
-- Paramètres salon/serveur encore plus rapides (UX admin)
-- Meilleure config de build Tauri pour packaging propre
+### Short term
+- Better multi-user stability on LAN/Internet
+- Faster room/server settings workflows (admin UX)
+- Cleaner Tauri build configuration for packaging
 
-### Moyen terme
-- Notifications plus robustes (mentions, présence, activité)
-- Outils de modération avancés (logs, actions groupées)
-- Amélioration perf DB et pagination des messages
+### Mid term
+- More robust notifications (mentions, presence, activity)
+- Advanced moderation tools (logs, bulk actions)
+- Better DB performance and message pagination
 
-### Exploratoire
-- **Compatibilité “client custom” avec APIs Discord ** (preview)
-	- uniquement si c’est faisable proprement
-	- pas activé par défaut dans le projet
+### Exploratory
+- **Custom client compatibility with official Discord APIs** (research preview)
+  - only if it can be done properly and safely
+  - disabled by default in this project
+
 ---
 
-## Prérequis
+## Technical Docs
+- [Protocol Specification](PROTOCOL.md)
+- [Ops / Release Checklist](OPS_CHECKLIST.md)
 
-### Outils
+---
+
+## Prerequisites
+
+### Tools
 - `Rust` (stable)
-- `Node.js` (LTS recommandé)
+- `Node.js` (LTS recommended)
 - `npm`
 
 ### Windows (Tauri)
 - `WebView2 Runtime`
-- Build tools C++ (Visual Studio Build Tools)
+- C++ Build Tools (Visual Studio Build Tools)
 
-> Le backend écoute par défaut sur `0.0.0.0:8080`.
+> The backend listens on `0.0.0.0:8080` by default.
 
 ---
 
-## Setup rapide (local)
+## Quick Local Setup
 
-### 1) Cloner le repo
+### 1) Clone the repository
 ```bash
 git clone https://github.com/Pouare514/discord2.git
 cd discord2
 ```
 
-### 2) Installer la partie frontend
+### 2) Install frontend dependencies
 ```bash
 cd discord-app
 npm install
 cd ..
 ```
 
-### 3) (Optionnel) Configurer `.env`
-Le backend lit `.env` (optionnel) à la racine du workspace.
+### 3) (Optional) Configure `.env`
+The backend reads `.env` (optional) from the workspace root.
 
-Exemple:
+You can start from:
+```bash
+cp .env.example .env
+```
+
+Example:
 ```env
 PORT=8080
 JWT_SECRET=change-me
-DATABASE_URL=sqlite:discord2.db
+DATABASE_URL=sqlite:voxium.db
 ```
 
-Sans `.env`, la DB par défaut sera créée automatiquement: `sqlite:discord2.db`.
+Without `.env`, the default DB is created automatically: `sqlite:voxium.db`.
 
-### 4) Lancer l’app
+### 4) Run the app
 Option A (Windows):
 ```bat
 launch.bat
 ```
 
-Option B (manuel, 2 terminaux):
+Option B (manual, 2 terminals):
 
 Terminal 1:
 ```bash
@@ -111,35 +124,37 @@ npm run tauri dev
 
 ---
 
-## Utiliser avec des amis (réseau)
+## Using It with Friends (Network)
 
-Par défaut, le frontend pointe vers `127.0.0.1` (localhost), donc **chaque ami doit pointer vers l’IP du serveur**.
+By default, the frontend points to `127.0.0.1` (localhost), so **each friend must point to the host server IP**.
 
-### 1) Héberger le backend sur une machine “serveur”
-Sur la machine hôte:
+### 1) Host the backend on one machine
+On the host machine:
 ```bash
 cd backend
 cargo run --bin backend
 ```
-Ouvrir le port `8080` dans le pare-feu/routeur si nécessaire.
+Open port `8080` in firewall/router if needed.
 
-### 2) Pointer les clients vers l’IP du serveur
-Dans `discord-app/src/main.js`, modifier:
+### 2) Point clients to the host IP/domain
+Edit `discord-app/src/runtime-config.js`:
 ```js
-const API = "http://127.0.0.1:8080";
-const WS_URL = "ws://127.0.0.1:8080/ws";
-```
-par l’IP LAN/WAN du serveur, ex:
-```js
-const API = "http://192.168.1.42:8080";
-const WS_URL = "ws://192.168.1.42:8080/ws";
+window.VOXIUM_RUNTIME_CONFIG = {
+  apiBaseUrl: "http://192.168.1.42:8080",
+  wsUrl: "ws://192.168.1.42:8080/ws",
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+};
 ```
 
-### 3) Adapter CSP Tauri
-Le fichier `discord-app/src-tauri/tauri.conf.json` contient aussi `127.0.0.1` dans `connect-src`.
-Remplace-la par l’IP utilisée, sinon les connexions peuvent être bloquées.
+For HTTPS deployment, use:
+- `apiBaseUrl: "https://your-domain.tld"`
+- `wsUrl: "wss://your-domain.tld/ws"`
 
-### 4) Lancer le client chez les amis
+### 3) Update Tauri CSP
+`discord-app/src-tauri/tauri.conf.json` also includes `127.0.0.1` in `connect-src`.
+Replace it with the IP/domain you actually use, otherwise connections may be blocked.
+
+### 4) Run the client on your friends’ machines
 ```bash
 cd discord-app
 npm install
@@ -148,76 +163,76 @@ npm run tauri dev
 
 ---
 
-## Rôles & administration
+## Roles & Administration
 
-### Promouvoir un utilisateur admin
-Option 1 (UI): via menu contextuel membre (si vous êtes déjà admin).
+### Promote a user to admin
+Option 1 (UI): via member context menu (if you are already admin).
 
 Option 2 (CLI):
 ```bat
 make_admin.bat
 ```
-Puis saisir le pseudo dans le terminal.
+Then enter the username in the terminal.
 
-### Paramètres serveur/salon
-- **Paramètres serveur**: création/suppression de rôles + attribution
-- **Paramètres salon** (clic droit): nom, type, rôle requis, mode public/privé
+### Server/Room settings
+- **Server settings**: create/delete roles + role assignment
+- **Room settings** (right-click): name, type, required role, public/private mode
 
 ---
 
-## Contribuer
+## Contributing
 
-Merci a ceux qui vont contribuer ❤️
+Thanks to everyone who wants to contribute ❤️
 
-Que ce soit une grosse feature, un fix, une idée UX ou même une typo, c’est bienvenu.
+Whether it’s a big feature, a bug fix, a UX idea, or even a typo, contributions are welcome.
 
-### Workflow simple
-1. Fork/clone puis crée une branche:
+### Simple workflow
+1. Fork/clone and create a branch:
 ```bash
-git checkout -b feat/ma-feature
+git checkout -b feat/my-feature
 ```
-2. Fais ton changement (petit et ciblé si possible)
-3. Vérifie rapidement:
+2. Make your changes (small and focused if possible)
+3. Run quick checks:
 ```bash
 cargo check -p backend
 node --check discord-app/src/main.js
 ```
-4. Commit avec un message clair:
+4. Commit with a clear message:
 ```bash
 git add .
-git commit -m "feat: ajoute ..."
+git commit -m "feat: add ..."
 ```
-5. Push + Pull Request
+5. Push + open a Pull Request
 
-### Guide (important)
-- Garde les changements lisibles et dans le scope de la PR
-- Explique le “pourquoi” dans la description de PR (2-3 lignes suffisent)
-- Si tu touches à l’UX, ajoute une capture/vidéo courte
-- Si tu modifies les rôles/permissions, précise les cas testés
-- Si tu as un doute sur une direction, ouvre une issue/discussion avant gros refactor
-
----
-
-## Dépannage
-
-### `npm run build` échoue avec `frontendDist includes ["node_modules", "src-tauri"]`
-C’est lié à la config Tauri actuelle (`frontendDist: "../"`).
-Pour dev local, utilisez `npm run tauri dev`.
-
-### Le client ne se connecte pas au backend
-- Vérifier `API` / `WS_URL` dans `discord-app/src/main.js`
-- Vérifier la CSP dans `discord-app/src-tauri/tauri.conf.json`
-- Vérifier port/pare-feu (`8080`)
-
-### Erreur DB
-- Vérifier `DATABASE_URL`
-- Supprimer/recréer le fichier SQLite local si vous êtes en dev et que vous pouvez reset
+### Contribution guide (important)
+- Keep changes readable and within PR scope
+- Explain the “why” in the PR description (2-3 lines is enough)
+- If you changed UX, add a short screenshot/video
+- If you changed roles/permissions, list tested scenarios
+- If unsure about direction, open an issue/discussion before a big refactor
 
 ---
 
-## Structure utile
-- `backend/`: API Rust + WebSocket + DB
-- `discord-app/`: client Tauri (UI)
-- `migrations/`: scripts SQL appliqués au démarrage
-- `uploads/`: fichiers uploadés
+## Troubleshooting
+
+### `npm run build` fails with `frontendDist includes ["node_modules", "src-tauri"]`
+This is caused by the current Tauri config (`frontendDist: "../"`).
+For local development, use `npm run tauri dev`.
+
+### Client cannot connect to backend
+- Check `API` / `WS_URL` in `discord-app/src/main.js`
+- Check CSP in `discord-app/src-tauri/tauri.conf.json`
+- Check port/firewall (`8080`)
+
+### Database issues
+- Check `DATABASE_URL`
+- In dev, if needed, recreate the local SQLite file from scratch
+
+---
+
+## Useful project structure
+- `backend/`: Rust API + WebSocket + DB
+- `discord-app/`: Tauri client (UI)
+- `migrations/`: SQL scripts applied at startup
+- `uploads/`: uploaded files
 

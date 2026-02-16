@@ -1,7 +1,7 @@
 {
-    "productName": "Discord2",
+    "productName": "Voxium",
     "version": "0.1.0",
-    "identifier": "com.discord2.app",
+    "identifier": "com.voxium.app",
     "build": {
         "frontendDist": "../",
         "beforeDevCommand": "",
@@ -10,7 +10,7 @@
     "app": {
         "windows": [
             {
-                "title": "Discord2",
+                "title": "Voxium",
                 "width": 1100,
                 "height": 750,
                 "resizable": true,

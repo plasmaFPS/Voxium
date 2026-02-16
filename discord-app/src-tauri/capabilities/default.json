@@ -1,6 +1,6 @@
 {
     "identifier": "default",
-    "description": "Default capability for Discord2",
+    "description": "Default capability for Voxium",
     "windows": [
         "main"
     ],
