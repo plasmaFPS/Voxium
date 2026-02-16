@@ -1,10 +1,19 @@
 use actix_web::{web, HttpRequest, HttpResponse};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use sqlx::sqlite::SqliteRow;
 use sqlx::SqlitePool;
 use sqlx::Row;
 use crate::auth::extract_claims;
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MessageReaction {
+    pub emoji: String,
+    pub count: i64,
+    pub user_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Message {
     pub id: String,
     pub room_id: String,
@@ -17,6 +26,25 @@ pub struct Message {
     pub pinned_at: Option<String>,
     pub pinned_by: Option<String>,
     pub avatar_url: Option<String>,
+    #[serde(default)]
+    pub reactions: Vec<MessageReaction>,
+}
+
+fn message_from_row(row: &SqliteRow) -> Message {
+    Message {
+        id: row.try_get("id").unwrap_or_default(),
+        room_id: row.try_get("room_id").unwrap_or_default(),
+        user_id: row.try_get("user_id").unwrap_or_default(),
+        username: row.try_get("username").unwrap_or_default(),
+        content: row.try_get("content").unwrap_or_default(),
+        reply_to_id: row.try_get("reply_to_id").unwrap_or(None),
+        created_at: row.try_get("created_at").unwrap_or_default(),
+        image_url: row.try_get("image_url").unwrap_or(None),
+        pinned_at: row.try_get("pinned_at").unwrap_or(None),
+        pinned_by: row.try_get("pinned_by").unwrap_or(None),
+        avatar_url: row.try_get("avatar_url").unwrap_or(None),
+        reactions: Vec::new(),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,6 +55,105 @@ pub struct SearchQuery {
     pub from: Option<String>,
     pub to: Option<String>,
     pub limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReactionInput {
+    pub emoji: String,
+}
+
+fn normalize_emoji(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let len = trimmed.chars().count();
+    if len > 16 {
+        return None;
+    }
+    if trimmed.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
+async fn enrich_messages_with_reactions(pool: &SqlitePool, messages: &mut [Message]) {
+    if messages.is_empty() {
+        return;
+    }
+
+    let mut query = String::from("SELECT message_id, emoji, user_id FROM message_reactions WHERE message_id IN (");
+    for idx in 0..messages.len() {
+        if idx > 0 {
+            query.push(',');
+        }
+        query.push('?');
+    }
+    query.push(')');
+
+    let mut qx = sqlx::query(&query);
+    for message in messages.iter() {
+        qx = qx.bind(&message.id);
+    }
+
+    let rows = qx.fetch_all(pool).await.unwrap_or_default();
+    let mut per_message: HashMap<String, HashMap<String, Vec<String>>> = HashMap::new();
+    for row in rows {
+        let message_id: String = row.try_get("message_id").unwrap_or_default();
+        let emoji: String = row.try_get("emoji").unwrap_or_default();
+        let user_id: String = row.try_get("user_id").unwrap_or_default();
+
+        if message_id.is_empty() || emoji.is_empty() || user_id.is_empty() {
+            continue;
+        }
+
+        per_message
+            .entry(message_id)
+            .or_default()
+            .entry(emoji)
+            .or_default()
+            .push(user_id);
+    }
+
+    for message in messages.iter_mut() {
+        let mut reactions = Vec::new();
+        if let Some(by_emoji) = per_message.get(&message.id) {
+            for (emoji, user_ids) in by_emoji {
+                reactions.push(MessageReaction {
+                    emoji: emoji.clone(),
+                    count: user_ids.len() as i64,
+                    user_ids: user_ids.clone(),
+                });
+            }
+            reactions.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.emoji.cmp(&b.emoji)));
+        }
+        message.reactions = reactions;
+    }
+}
+
+async fn can_access_message_room(pool: &SqlitePool, message_id: &str, role: &str) -> Option<String> {
+    let row = sqlx::query(
+        "SELECT m.room_id AS room_id, r.required_role AS required_role \
+         FROM messages m \
+         LEFT JOIN rooms r ON m.room_id = r.id \
+         WHERE m.id = ?"
+    )
+    .bind(message_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None)?;
+
+    let room_id: String = row.try_get("room_id").unwrap_or_default();
+    let required_role: String = row.try_get("required_role").unwrap_or_else(|_| "user".to_string());
+    if room_id.is_empty() {
+        return None;
+    }
+
+    if required_role != "user" && role != "admin" && role != required_role {
+        return None;
+    }
+
+    Some(room_id)
 }
 
 /// GET /api/rooms/{room_id}/messages — Fetch message history
@@ -56,7 +183,7 @@ pub async fn get_messages(
         return HttpResponse::Forbidden().json(serde_json::json!({ "error": "Access denied for this room" }));
     }
 
-    let messages = sqlx::query_as::<_, Message>(
+    let rows = sqlx::query(
         "SELECT m.id, m.room_id, m.user_id, m.username, m.content, m.reply_to_id, m.created_at, m.image_url, m.pinned_at, m.pinned_by, u.avatar_url \
          FROM messages m LEFT JOIN users u ON m.user_id = u.id \
          WHERE m.room_id = ? ORDER BY m.created_at ASC LIMIT 200"
@@ -65,6 +192,10 @@ pub async fn get_messages(
     .fetch_all(pool.get_ref())
     .await
     .unwrap_or_default();
+
+    let mut messages: Vec<Message> = rows.iter().map(message_from_row).collect();
+
+    enrich_messages_with_reactions(pool.get_ref(), &mut messages).await;
 
     HttpResponse::Ok().json(messages)
 }
@@ -86,7 +217,7 @@ pub async fn delete_message(
     let message_id = path.into_inner();
 
     // 1. Fetch message to check ownership and get room_id
-    let msg = sqlx::query_as::<_, Message>(
+    let msg_row = sqlx::query(
         "SELECT m.id, m.room_id, m.user_id, m.username, m.content, m.reply_to_id, m.created_at, m.image_url, m.pinned_at, m.pinned_by, u.avatar_url \
          FROM messages m LEFT JOIN users u ON m.user_id = u.id WHERE m.id = ?"
     )
@@ -95,8 +226,8 @@ pub async fn delete_message(
         .await
         .unwrap_or(None);
 
-    let msg = match msg {
-        Some(m) => m,
+    let msg = match msg_row {
+        Some(row) => message_from_row(&row),
         None => return HttpResponse::NotFound().json(serde_json::json!({ "error": "Message not found" })),
     };
 
@@ -111,7 +242,12 @@ pub async fn delete_message(
         std::fs::remove_file(path).ok();
     }
 
-    // 4. Delete from DB
+    // 4. Delete related reactions + message from DB
+    let _ = sqlx::query("DELETE FROM message_reactions WHERE message_id = ?")
+        .bind(&message_id)
+        .execute(pool.get_ref())
+        .await;
+
     let _ = sqlx::query("DELETE FROM messages WHERE id = ?")
         .bind(&message_id)
         .execute(pool.get_ref())
@@ -154,7 +290,7 @@ pub async fn get_pinned_messages(
         return HttpResponse::Forbidden().json(serde_json::json!({ "error": "Access denied for this room" }));
     }
 
-    let messages = sqlx::query_as::<_, Message>(
+    let rows = sqlx::query(
         "SELECT m.id, m.room_id, m.user_id, m.username, m.content, m.reply_to_id, m.created_at, m.image_url, m.pinned_at, m.pinned_by, u.avatar_url \
          FROM messages m LEFT JOIN users u ON m.user_id = u.id \
          WHERE m.room_id = ? AND m.pinned_at IS NOT NULL ORDER BY m.pinned_at DESC LIMIT 50"
@@ -164,7 +300,117 @@ pub async fn get_pinned_messages(
     .await
     .unwrap_or_default();
 
+    let mut messages: Vec<Message> = rows.iter().map(message_from_row).collect();
+
+    enrich_messages_with_reactions(pool.get_ref(), &mut messages).await;
+
     HttpResponse::Ok().json(messages)
+}
+
+/// POST /api/messages/{id}/reactions
+pub async fn add_reaction(
+    req: HttpRequest,
+    pool: web::Data<SqlitePool>,
+    path: web::Path<String>,
+    body: web::Json<ReactionInput>,
+    broadcaster: web::Data<crate::ws::Broadcaster>,
+) -> HttpResponse {
+    let claims = match extract_claims(&req) {
+        Some(c) => c,
+        None => return HttpResponse::Unauthorized().finish(),
+    };
+
+    let message_id = path.into_inner();
+    let Some(emoji) = normalize_emoji(&body.emoji) else {
+        return HttpResponse::BadRequest().json(serde_json::json!({ "error": "Invalid emoji" }));
+    };
+
+    let Some(room_id) = can_access_message_room(pool.get_ref(), &message_id, &claims.role).await else {
+        return HttpResponse::Forbidden().json(serde_json::json!({ "error": "Access denied" }));
+    };
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO message_reactions (message_id, user_id, emoji, created_at) VALUES (?, ?, ?, ?)"
+    )
+    .bind(&message_id)
+    .bind(&claims.sub)
+    .bind(&emoji)
+    .bind(&now)
+    .execute(pool.get_ref())
+    .await;
+
+    let reaction_users = sqlx::query_scalar::<_, String>(
+        "SELECT user_id FROM message_reactions WHERE message_id = ? AND emoji = ? ORDER BY created_at ASC"
+    )
+    .bind(&message_id)
+    .bind(&emoji)
+    .fetch_all(pool.get_ref())
+    .await
+    .unwrap_or_default();
+
+    let event = serde_json::json!({
+        "type": "message_reaction_updated",
+        "room_id": room_id,
+        "message_id": message_id,
+        "emoji": emoji,
+        "count": reaction_users.len(),
+        "user_ids": reaction_users,
+    });
+    let _ = broadcaster.send(event.to_string());
+
+    HttpResponse::Ok().json(event)
+}
+
+/// DELETE /api/messages/{id}/reactions
+pub async fn remove_reaction(
+    req: HttpRequest,
+    pool: web::Data<SqlitePool>,
+    path: web::Path<String>,
+    body: web::Json<ReactionInput>,
+    broadcaster: web::Data<crate::ws::Broadcaster>,
+) -> HttpResponse {
+    let claims = match extract_claims(&req) {
+        Some(c) => c,
+        None => return HttpResponse::Unauthorized().finish(),
+    };
+
+    let message_id = path.into_inner();
+    let Some(emoji) = normalize_emoji(&body.emoji) else {
+        return HttpResponse::BadRequest().json(serde_json::json!({ "error": "Invalid emoji" }));
+    };
+
+    let Some(room_id) = can_access_message_room(pool.get_ref(), &message_id, &claims.role).await else {
+        return HttpResponse::Forbidden().json(serde_json::json!({ "error": "Access denied" }));
+    };
+
+    let _ = sqlx::query("DELETE FROM message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?")
+        .bind(&message_id)
+        .bind(&claims.sub)
+        .bind(&emoji)
+        .execute(pool.get_ref())
+        .await;
+
+    let reaction_users = sqlx::query_scalar::<_, String>(
+        "SELECT user_id FROM message_reactions WHERE message_id = ? AND emoji = ? ORDER BY created_at ASC"
+    )
+    .bind(&message_id)
+    .bind(&emoji)
+    .fetch_all(pool.get_ref())
+    .await
+    .unwrap_or_default();
+
+    let event = serde_json::json!({
+        "type": "message_reaction_updated",
+        "room_id": room_id,
+        "message_id": message_id,
+        "emoji": emoji,
+        "count": reaction_users.len(),
+        "user_ids": reaction_users,
+    });
+    let _ = broadcaster.send(event.to_string());
+
+    HttpResponse::Ok().json(event)
 }
 
 /// POST /api/messages/{id}/pin — Pin message (admin only)
@@ -396,20 +642,10 @@ pub async fn search_messages(
     let rows = qx.fetch_all(pool.get_ref()).await.unwrap_or_default();
     let mut messages: Vec<Message> = Vec::with_capacity(rows.len());
     for row in rows {
-        messages.push(Message {
-            id: row.try_get("id").unwrap_or_default(),
-            room_id: row.try_get("room_id").unwrap_or_default(),
-            user_id: row.try_get("user_id").unwrap_or_default(),
-            username: row.try_get("username").unwrap_or_default(),
-            content: row.try_get("content").unwrap_or_default(),
-            reply_to_id: row.try_get("reply_to_id").unwrap_or(None),
-            created_at: row.try_get("created_at").unwrap_or_default(),
-            image_url: row.try_get("image_url").unwrap_or(None),
-            pinned_at: row.try_get("pinned_at").unwrap_or(None),
-            pinned_by: row.try_get("pinned_by").unwrap_or(None),
-            avatar_url: row.try_get("avatar_url").unwrap_or(None),
-        });
+        messages.push(message_from_row(&row));
     }
+
+    enrich_messages_with_reactions(pool.get_ref(), &mut messages).await;
 
     HttpResponse::Ok().json(messages)
 }

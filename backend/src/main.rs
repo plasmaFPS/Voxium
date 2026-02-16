@@ -58,6 +58,8 @@ async fn main() -> std::io::Result<()> {
             .route("/api/rooms/{id}", web::delete().to(rooms::delete_room))
             // Messages
             .route("/api/messages/{id}", web::delete().to(messages::delete_message))
+            .route("/api/messages/{id}/reactions", web::post().to(messages::add_reaction))
+            .route("/api/messages/{id}/reactions", web::delete().to(messages::remove_reaction))
             .route("/api/messages/search", web::get().to(messages::search_messages))
             .route("/api/messages/{id}/pin", web::post().to(messages::pin_message))
             .route("/api/messages/{id}/pin", web::delete().to(messages::unpin_message))

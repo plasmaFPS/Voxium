@@ -1529,7 +1529,7 @@ body {
 .message {
     display: flex;
     gap: 16px;
-    padding: 2px 16px;
+    padding: 0 16px;
     margin-top: 0;
     position: relative;
     animation: messageIn 0.1s ease;
@@ -1540,7 +1540,7 @@ body {
 }
 
 .message.first-in-group {
-    margin-top: 16px;
+    margin-top: 4px;
 }
 
 /* Message Hover Actions */
@@ -1606,6 +1606,16 @@ body {
     width: 40px;
 }
 
+.message:not(.first-in-group) {
+    gap: 8px;
+}
+
+.message:not(.first-in-group) .message-avatar.placeholder {
+    width: 20px;
+    height: 0;
+    min-height: 0;
+}
+
 .message-body {
     flex: 1;
     min-width: 0;
@@ -1640,7 +1650,7 @@ body {
     line-height: 1.375;
     word-wrap: break-word;
     white-space: pre-wrap;
-    margin-top: 2px;
+    margin-top: 0;
 }
 
 .message-mentioned {
@@ -1679,7 +1689,78 @@ body {
     gap: 4px;
     font-size: 11px;
     color: var(--text-muted);
-    margin-bottom: 2px;
+    margin-bottom: 1px;
+}
+
+.message-reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 3px;
+}
+
+.message-reaction-chip {
+    border: 1px solid var(--bg-modifier-selected);
+    background: var(--bg-secondary);
+    color: var(--text-normal);
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 12px;
+    line-height: 1.2;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.message-reaction-chip:hover {
+    background: var(--bg-modifier-hover);
+}
+
+.message-reaction-chip.is-active {
+    border-color: var(--accent);
+    background: var(--theme-tint-soft);
+}
+
+.message-reaction-emoji {
+    font-size: 13px;
+}
+
+.message-reaction-count {
+    color: var(--header-secondary);
+    font-weight: 600;
+}
+
+.message-reaction-picker {
+    position: fixed;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 12px;
+    border: 1px solid var(--bg-modifier-selected);
+    background: var(--bg-secondary);
+    box-shadow: var(--elevation-high);
+}
+
+.message-reaction-picker-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-normal);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.message-reaction-picker-btn:hover {
+    background: var(--bg-modifier-hover);
 }
 
 .pinned-list {

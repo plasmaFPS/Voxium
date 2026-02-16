@@ -101,6 +101,14 @@ pub async fn init_db() -> SqlitePool {
         }
     }
 
+    let migration_011 = include_str!("../../migrations/011_add_message_reactions.sql");
+    for statement in migration_011.split(';') {
+        let trimmed = statement.trim();
+        if !trimmed.is_empty() {
+            sqlx::query(trimmed).execute(&pool).await.ok();
+        }
+    }
+
     println!("✅ Database initialized");
     pool
 }
